@@ -3,7 +3,7 @@ import { ConvexClientProvider } from "./ConvexClientProvider";
 import Link from "next/link";
 
 export const metadata = {
-  title: "Agency HQ | Raize The Vibe",
+  title: "A.G.E HQ | Raize The Vibe",
   description: "Agency Command Center",
 };
 
@@ -12,7 +12,7 @@ function NavBar() {
     <nav className="bg-gray-900 border-b border-gray-800 px-6 py-4">
       <div className="flex items-center justify-between max-w-7xl mx-auto">
         <Link href="/" className="text-xl font-bold text-amber-400">
-          🎯 Agency HQ
+          🎯 A.G.E HQ
         </Link>
         <div className="flex gap-6">
           <Link href="/" className="text-gray-300 hover:text-white transition-colors">

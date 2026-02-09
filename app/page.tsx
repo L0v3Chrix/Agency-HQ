@@ -543,7 +543,7 @@ export default function Dashboard() {
   if (!stats || !agents || !tasksByStatus) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="text-amber-400 text-xl">Loading Agency HQ...</div>
+        <div className="text-amber-400 text-xl">Loading A.G.E HQ...</div>
       </div>
     );
   }
@@ -554,7 +554,7 @@ export default function Dashboard() {
       <header className="border-b border-gray-800 px-6 py-4">
         <div className="max-w-[1600px] mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-amber-400">Agency HQ</h1>
+            <h1 className="text-2xl font-bold text-amber-400">A.G.E HQ</h1>
             <p className="text-gray-500 text-sm">Raize The Vibe Command Center</p>
           </div>
           <nav className="flex items-center gap-4">
