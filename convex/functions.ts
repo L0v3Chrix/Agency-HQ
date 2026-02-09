@@ -695,3 +695,184 @@ export const getTaskMessages = query({
       .collect();
   },
 });
+
+// ============================================
+// BACKUP & DATA PROTECTION
+// ============================================
+
+// Export a single table for backup
+export const exportTable = query({
+  args: { table: v.string() },
+  handler: async (ctx, args) => {
+    const validTables = [
+      "agency", "agencyAgents", "agencyTasks",
+      "clients", "clientAgents", "clientDomains", "clientTasks",
+      "activities", "taskMessages", "notifications", "auditLog", "metricsSnapshots"
+    ];
+    
+    if (!validTables.includes(args.table)) {
+      return [];
+    }
+    
+    return await ctx.db.query(args.table as any).collect();
+  },
+});
+
+// Export all data for full backup
+export const exportAllData = query({
+  handler: async (ctx) => {
+    return {
+      timestamp: Date.now(),
+      data: {
+        agency: await ctx.db.query("agency").collect(),
+        agencyAgents: await ctx.db.query("agencyAgents").collect(),
+        agencyTasks: await ctx.db.query("agencyTasks").collect(),
+        clients: await ctx.db.query("clients").collect(),
+        clientAgents: await ctx.db.query("clientAgents").collect(),
+        clientDomains: await ctx.db.query("clientDomains").collect(),
+        clientTasks: await ctx.db.query("clientTasks").collect(),
+        activities: await ctx.db.query("activities").collect(),
+        taskMessages: await ctx.db.query("taskMessages").collect(),
+      },
+    };
+  },
+});
+
+// Create pre-operation backup snapshot (returns backup ID)
+export const createBackupSnapshot = mutation({
+  args: { 
+    reason: v.string(),
+    operationType: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const snapshot = {
+      timestamp: Date.now(),
+      reason: args.reason,
+      operationType: args.operationType,
+      data: {
+        agency: await ctx.db.query("agency").collect(),
+        agencyAgents: await ctx.db.query("agencyAgents").collect(),
+        agencyTasks: await ctx.db.query("agencyTasks").collect(),
+        clients: await ctx.db.query("clients").collect(),
+        clientAgents: await ctx.db.query("clientAgents").collect(),
+        clientDomains: await ctx.db.query("clientDomains").collect(),
+        clientTasks: await ctx.db.query("clientTasks").collect(),
+        activities: await ctx.db.query("activities").collect(),
+      },
+    };
+    
+    // Log the backup creation
+    await ctx.db.insert("auditLog", {
+      timestamp: Date.now(),
+      actorType: "system",
+      actorId: "backup",
+      actorName: "Backup System",
+      action: "backup.created",
+      resourceType: "database",
+      resourceId: "full",
+      details: JSON.stringify({ reason: args.reason, operationType: args.operationType }),
+    });
+    
+    return { backupId: `backup_${Date.now()}`, snapshot };
+  },
+});
+
+// ============================================
+// SAFEGUARDED DESTRUCTIVE OPERATIONS
+// ============================================
+
+// Soft delete for tasks (marks as deleted, doesn't remove)
+export const softDeleteAgencyTask = mutation({
+  args: { 
+    taskId: v.id("agencyTasks"),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.taskId);
+    if (!task) {
+      return { error: "Task not found" };
+    }
+    
+    // Log the deletion
+    await ctx.db.insert("auditLog", {
+      timestamp: Date.now(),
+      actorType: "agent",
+      actorId: "unknown",
+      actorName: "Agent",
+      action: "task.soft_deleted",
+      resourceType: "agencyTask",
+      resourceId: args.taskId,
+      details: JSON.stringify({ reason: args.reason, taskTitle: task.title }),
+    });
+    
+    // Update task with deletedAt instead of removing
+    await ctx.db.patch(args.taskId, {
+      status: "deleted" as any,
+      updatedAt: Date.now(),
+    });
+    
+    return { ok: true, deletedAt: Date.now() };
+  },
+});
+
+// DANGEROUS: Clear all data - requires confirmation
+// This should NEVER be called without explicit user approval
+export const dangerousClearAllData = mutation({
+  args: { 
+    confirmation: v.string(), // Must be "I CONFIRM DELETION"
+    reason: v.string(),
+    backupCompleted: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    // Require exact confirmation string
+    if (args.confirmation !== "I CONFIRM DELETION") {
+      return { 
+        error: "Confirmation failed. Must pass confirmation: 'I CONFIRM DELETION'",
+        aborted: true,
+      };
+    }
+    
+    // Require backup confirmation
+    if (!args.backupCompleted) {
+      return {
+        error: "Must confirm backup was completed before clearing data",
+        aborted: true,
+      };
+    }
+    
+    // Log the destructive operation BEFORE executing
+    await ctx.db.insert("auditLog", {
+      timestamp: Date.now(),
+      actorType: "agent",
+      actorId: "unknown",
+      actorName: "Agent",
+      action: "database.DANGEROUS_CLEAR",
+      resourceType: "database",
+      resourceId: "all",
+      details: JSON.stringify({ reason: args.reason, backupCompleted: args.backupCompleted }),
+    });
+    
+    const tables = [
+      "agency", "agencyAgents", "agencyTasks",
+      "clients", "clientAgents", "clientDomains", "clientTasks",
+      "activities", "taskMessages", "notifications", "metricsSnapshots"
+      // Note: auditLog is NOT cleared - always preserved
+    ];
+    
+    let deleted = 0;
+    for (const table of tables) {
+      const docs = await ctx.db.query(table as any).collect();
+      for (const doc of docs) {
+        await ctx.db.delete(doc._id);
+        deleted++;
+      }
+    }
+    
+    return { 
+      status: "cleared",
+      documentsDeleted: deleted,
+      auditLogPreserved: true,
+      timestamp: Date.now(),
+    };
+  },
+});

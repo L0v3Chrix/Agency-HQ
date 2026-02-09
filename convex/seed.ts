@@ -451,28 +451,16 @@ export const seedAgency = mutation({
   },
 });
 
-// Clear all data (for re-seeding during development)
+// DEPRECATED: Old clear function - DO NOT USE
+// Use dangerousClearAllData in functions.ts instead which requires confirmation
 export const clearAndReseed = mutation({
   handler: async (ctx) => {
-    const tables = [
-      "agency", "agencyAgents", "agencyTasks", 
-      "clients", "clientAgents", "clientDomains", "clientTasks",
-      "activities", "taskMessages", "notifications", "auditLog", "metricsSnapshots"
-    ];
-    
-    let deleted = 0;
-    for (const table of tables) {
-      try {
-        const docs = await ctx.db.query(table as any).collect();
-        for (const doc of docs) {
-          await ctx.db.delete(doc._id);
-          deleted++;
-        }
-      } catch (e) {
-        // Table might not exist, continue
-      }
-    }
-    
-    return { status: "cleared", documentsDeleted: deleted };
+    // This function is disabled for safety
+    // Use functions:dangerousClearAllData with proper confirmation instead
+    return { 
+      status: "blocked",
+      error: "This function is disabled for safety. Use dangerousClearAllData with confirmation: 'I CONFIRM DELETION'",
+      documentsDeleted: 0,
+    };
   },
 });
