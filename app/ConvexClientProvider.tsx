@@ -3,8 +3,8 @@
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { ReactNode, useEffect } from "react";
 
-// Production Convex URL - hardcoded for reliability
-const CONVEX_URL = "https://confident-warthog-397.convex.cloud";
+// Convex URL - using dev deployment for testing
+const CONVEX_URL = "https://dashing-bee-76.convex.cloud";
 
 const convex = new ConvexReactClient(CONVEX_URL);
 
