@@ -565,7 +565,16 @@ export default function Dashboard() {
   const [showAddTask, setShowAddTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
   
+  // Debug logging
+  console.log("[A.G.E HQ] Query results:", { 
+    stats, 
+    agentsCount: agents?.length,
+    tasksLoaded: !!tasksByStatus,
+    clientHealthCount: clientHealth?.length 
+  });
+  
   if (!stats || !agents || !tasksByStatus) {
+    console.log("[A.G.E HQ] Still loading...", { stats: !!stats, agents: !!agents, tasksByStatus: !!tasksByStatus });
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div className="text-amber-400 text-xl">Loading A.G.E HQ...</div>
