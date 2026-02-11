@@ -55,3 +55,29 @@ body {
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Agent card hover glow effect */
+.group:hover img {
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.3);
+}
+
+/* Subtle gradient overlay for header */
+header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.3), transparent);
+}
+
+/* Logo subtle glow */
+header img[alt="A.G.E HQ"] {
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.2));
+  transition: filter 0.3s ease;
+}
+
+header img[alt="A.G.E HQ"]:hover {
+  filter: drop-shadow(0 0 12px rgba(251, 191, 36, 0.4));
+}

@@ -61,6 +61,16 @@ function formatTimestamp(timestamp: number) {
 // AGENT CARD COMPONENT
 // ============================================
 
+// Agent avatar mapping
+const agentAvatars: Record<string, string> = {
+  "Daniel": "/images/agents/daniel.png",
+  "Foreman": "/images/agents/foreman.png",
+  "Growth": "/images/agents/growth.png",
+  "Creative": "/images/agents/creative.png",
+  "Builder": "/images/agents/builder.png",
+  "Research": "/images/agents/research.png",
+};
+
 function AgentCard({ agent }: { agent: any }) {
   const schedules: Record<string, string> = {
     "Daniel": "Continuous",
@@ -72,13 +82,28 @@ function AgentCard({ agent }: { agent: any }) {
     "Research": ":50 hourly",
   };
 
+  const avatarSrc = agentAvatars[agent.name];
+
   return (
-    <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50 hover:border-amber-500/30 transition-colors">
-      <div className="flex items-start justify-between mb-2">
-        <h3 className="font-semibold text-amber-400">{agent.name}</h3>
-        <div className={`w-2.5 h-2.5 rounded-full ${statusDot[agent.status]}`} />
+    <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/50 hover:border-amber-500/30 transition-colors group">
+      <div className="flex items-center gap-3 mb-2">
+        {avatarSrc ? (
+          <div className="relative">
+            <img 
+              src={avatarSrc} 
+              alt={agent.name}
+              className="w-10 h-10 rounded-full object-cover border-2 border-gray-700 group-hover:border-amber-500/50 transition-colors"
+            />
+            <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-gray-800 ${statusDot[agent.status]}`} />
+          </div>
+        ) : (
+          <div className={`w-2.5 h-2.5 rounded-full ${statusDot[agent.status]}`} />
+        )}
+        <div>
+          <h3 className="font-semibold text-amber-400">{agent.name}</h3>
+          <p className="text-gray-400 text-xs">{agent.role}</p>
+        </div>
       </div>
-      <p className="text-gray-400 text-sm mb-2">{agent.role}</p>
       <p className="text-gray-500 text-xs">
         Last seen: {formatTime(agent.lastHeartbeat)}
       </p>
@@ -551,11 +576,27 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-amber-400">A.G.E HQ</h1>
-            <p className="text-gray-500 text-sm">Raize The Vibe Command Center</p>
+      <header className="border-b border-gray-800 px-6 py-4 relative overflow-hidden">
+        {/* Subtle hero banner background */}
+        <div 
+          className="absolute inset-0 opacity-20"
+          style={{
+            backgroundImage: 'url(/images/hero-banner.png)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        />
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between relative z-10">
+          <div className="flex items-center gap-4">
+            <img 
+              src="/images/age-hq-logo.png" 
+              alt="A.G.E HQ" 
+              className="w-12 h-12 object-contain"
+            />
+            <div>
+              <h1 className="text-2xl font-bold text-amber-400">A.G.E HQ</h1>
+              <p className="text-gray-500 text-sm">Raize The Vibe Command Center</p>
+            </div>
           </div>
           <nav className="flex items-center gap-4">
             <a href="/" className="text-amber-400 font-medium">Dashboard</a>
