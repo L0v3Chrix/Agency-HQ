@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
+import PageHeader from "@/app/components/PageHeader";
 
 export default function AgentsPage() {
   const agencyAgents = useQuery(api.functions.getAgencyAgents) || [];
@@ -60,7 +61,9 @@ export default function AgentsPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <>
+    <PageHeader />
+    <div className="max-w-7xl mx-auto px-6 pb-8 space-y-8">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -234,6 +237,7 @@ export default function AgentsPage() {
         </div>
       </section>
     </div>
+    </>
   );
 }
 

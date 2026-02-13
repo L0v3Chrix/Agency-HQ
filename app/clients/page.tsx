@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
+import PageHeader from "@/app/components/PageHeader";
 
 export default function ClientsPage() {
   const clients = useQuery(api.functions.getClients, {}) || [];
@@ -18,7 +19,9 @@ export default function ClientsPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <>
+    <PageHeader />
+    <div className="max-w-7xl mx-auto px-6 pb-8 space-y-8">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold mb-2">Clients</h2>
@@ -90,5 +93,6 @@ export default function ClientsPage() {
         </table>
       </div>
     </div>
+    </>
   );
 }

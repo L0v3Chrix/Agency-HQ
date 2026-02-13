@@ -2,8 +2,10 @@
 
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Id } from "../convex/_generated/dataModel";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 // ============================================
 // STYLES & CONSTANTS
@@ -526,12 +528,12 @@ function ClientHealthList({ clients }: { clients: any[] }) {
     <div className="bg-gray-900/50 rounded-lg border border-gray-800 p-4">
       <div className="flex items-center justify-between mb-3">
         <p className="text-gray-400 text-sm">Client Health</p>
-        <a href="/clients" className="text-amber-400 text-xs hover:text-amber-300">View All →</a>
+        <Link href="/clients" className="text-amber-400 text-xs hover:text-amber-300">View All →</Link>
       </div>
       {clients.length > 0 ? (
         <div className="space-y-2">
           {clients.slice(0, 5).map((client) => (
-            <a 
+            <Link
               key={client._id}
               href={`/clients/${client.slug}`}
               className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-gray-800/50 transition-colors"
@@ -541,7 +543,7 @@ function ClientHealthList({ clients }: { clients: any[] }) {
                 <span className="text-white text-sm">{client.name}</span>
               </div>
               <span className="text-gray-400 text-xs">{client.healthScore}%</span>
-            </a>
+            </Link>
           ))}
         </div>
       ) : (
@@ -562,8 +564,28 @@ export default function Dashboard() {
   const activities = useQuery(api.functions.getActivities, { limit: 30 });
   const clientHealth = useQuery(api.functions.getClientHealthSummary);
   
+  const wakeAgent = useMutation(api.functions.wakeAgent);
+  const pathname = usePathname();
+
   const [showAddTask, setShowAddTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [wakeStatus, setWakeStatus] = useState<"idle" | "sending" | "sent">("idle");
+  const [wakedAgent, setWakedAgent] = useState("");
+  const [showWakeMenu, setShowWakeMenu] = useState(false);
+
+  // Close wake menu on outside click
+  const wakeMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (wakeMenuRef.current && !wakeMenuRef.current.contains(event.target as Node)) {
+        setShowWakeMenu(false);
+      }
+    }
+    if (showWakeMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showWakeMenu]);
   
   // Debug logging
   console.log("[A.G.E HQ] Query results:", { 
@@ -607,18 +629,73 @@ export default function Dashboard() {
               <p className="text-gray-500 text-sm">Raize The Vibe Command Center</p>
             </div>
           </div>
-          <nav className="flex items-center gap-4">
-            <a href="/" className="text-amber-400 font-medium">Dashboard</a>
-            <a href="/clients" className="text-gray-400 hover:text-white">Clients</a>
-            <a href="/agents" className="text-gray-400 hover:text-white">Agents</a>
-            <a href="/settings" className="text-gray-400 hover:text-white">Settings</a>
+          <nav className="flex items-center gap-6">
+            {[
+              { href: "/", label: "Dashboard" },
+              { href: "/clients", label: "Clients" },
+              { href: "/agents", label: "Agents" },
+              { href: "/settings", label: "Settings" },
+            ].map((link) => {
+              const isActive = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`transition-colors ${isActive ? "text-amber-400 font-medium" : "text-gray-400 hover:text-white"}`}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
           </nav>
-          <button
-            onClick={() => setShowAddTask(true)}
-            className="bg-amber-600 hover:bg-amber-500 px-4 py-2 rounded-lg font-medium transition-colors"
-          >
-            + Add Task
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Wake Agent Dropdown */}
+            <div className="relative" ref={wakeMenuRef}>
+              <button
+                onClick={() => wakeStatus === "idle" && setShowWakeMenu(!showWakeMenu)}
+                disabled={wakeStatus !== "idle"}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  wakeStatus === "sent"
+                    ? "bg-green-700 text-green-200 cursor-default"
+                    : wakeStatus === "sending"
+                    ? "bg-gray-700 text-gray-400 cursor-wait"
+                    : "bg-gray-700 hover:bg-amber-700 text-amber-400 hover:text-white border border-amber-600/50"
+                }`}
+              >
+                {wakeStatus === "sent" ? `✓ ${wakedAgent} Alerted` : wakeStatus === "sending" ? "Waking..." : "⚡ Wake Agent"}
+              </button>
+              {showWakeMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                  {["Foreman", "PM", "Builder", "Creative", "Growth", "Research", "Daniel"].map((name) => (
+                    <button
+                      key={name}
+                      onClick={async () => {
+                        setShowWakeMenu(false);
+                        setWakeStatus("sending");
+                        setWakedAgent(name);
+                        try {
+                          await wakeAgent({ agentName: name, reason: `Owner requested ${name} check the board from HQ` });
+                          setWakeStatus("sent");
+                          setTimeout(() => setWakeStatus("idle"), 3000);
+                        } catch {
+                          setWakeStatus("idle");
+                        }
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-300 hover:bg-amber-600/20 hover:text-amber-400 transition-colors"
+                    >
+                      ⚡ {name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setShowAddTask(true)}
+              className="bg-amber-600 hover:bg-amber-500 px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              + Add Task
+            </button>
+          </div>
         </div>
       </header>
       

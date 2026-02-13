@@ -868,11 +868,400 @@ export const dangerousClearAllData = mutation({
       }
     }
     
-    return { 
+    return {
       status: "cleared",
       documentsDeleted: deleted,
       auditLogPreserved: true,
       timestamp: Date.now(),
     };
+  },
+});
+
+// ============================================
+// AGENT LOOKUP & TASK MANAGEMENT (Sprint 1.2)
+// ============================================
+
+// Get agent by session key
+export const getAgentBySessionKey = query({
+  args: { sessionKey: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db.query("agencyAgents")
+      .filter((q) => q.eq(q.field("sessionKey"), args.sessionKey))
+      .first();
+  },
+});
+
+// Get tasks assigned to agent by session key
+export const getMyTasks = query({
+  args: { sessionKey: v.string() },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.query("agencyAgents")
+      .filter((q) => q.eq(q.field("sessionKey"), args.sessionKey))
+      .first();
+    if (!agent) return [];
+
+    const agencyTasks = await ctx.db.query("agencyTasks")
+      .filter((q) => q.eq(q.field("assigneeId"), agent._id))
+      .collect();
+
+    return agencyTasks.filter(t =>
+      t.status !== "done" && t.status !== "blocked"
+    );
+  },
+});
+
+// Get messages/activities for a specific agent (by name mention)
+export const getMessagesForAgent = query({
+  args: { agentName: v.string(), since: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const since = args.since || Date.now() - 3600000; // default: last hour
+    const activities = await ctx.db.query("activities")
+      .withIndex("by_created")
+      .order("desc")
+      .collect();
+
+    return activities.filter(a =>
+      a.createdAt >= since && (
+        a.message.includes(`→ ${args.agentName}`) ||
+        a.message.includes(`@${args.agentName}`)
+      )
+    );
+  },
+});
+
+// Atomic claim task — sets assignee + status in one operation
+export const claimTask = mutation({
+  args: {
+    taskId: v.id("agencyTasks"),
+    sessionKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.query("agencyAgents")
+      .filter((q) => q.eq(q.field("sessionKey"), args.sessionKey))
+      .first();
+    if (!agent) return { error: "Agent not found for session key: " + args.sessionKey };
+
+    const task = await ctx.db.get(args.taskId);
+    if (!task) return { error: "Task not found" };
+    if (task.status !== "assigned" && task.status !== "inbox") {
+      return { error: `Cannot claim task in ${task.status} status` };
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.taskId, {
+      status: "in_progress",
+      assigneeId: agent._id,
+      updatedAt: now,
+    });
+
+    await ctx.db.patch(agent._id, {
+      status: "active",
+      currentTaskId: args.taskId,
+      lastHeartbeat: now,
+    });
+
+    await ctx.db.insert("activities", {
+      type: "task_created",
+      message: `[UPDATE] ${agent.name} claimed task: ${task.title}`,
+      severity: "info",
+      agentName: agent.name,
+      taskId: args.taskId as string,
+      createdAt: now,
+    });
+
+    return { ok: true, taskTitle: task.title };
+  },
+});
+
+// Atomic complete task — marks done + logs audit
+export const completeTask = mutation({
+  args: {
+    taskId: v.id("agencyTasks"),
+    sessionKey: v.string(),
+    summary: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.query("agencyAgents")
+      .filter((q) => q.eq(q.field("sessionKey"), args.sessionKey))
+      .first();
+    if (!agent) return { error: "Agent not found for session key: " + args.sessionKey };
+
+    const task = await ctx.db.get(args.taskId);
+    if (!task) return { error: "Task not found" };
+
+    const now = Date.now();
+
+    // L2 agents go to review, L3+ go to done
+    const newStatus = (agent.level === "L3" || agent.level === "L4") ? "done" : "review";
+
+    await ctx.db.patch(args.taskId, {
+      status: newStatus as any,
+      updatedAt: now,
+      completedAt: now,
+    });
+
+    // Clear agent's current task
+    await ctx.db.patch(agent._id, {
+      status: "idle",
+      currentTaskId: undefined,
+      lastHeartbeat: now,
+    });
+
+    await ctx.db.insert("activities", {
+      type: "task_completed",
+      message: `[COMPLETE] ${agent.name}: ${args.summary}`,
+      severity: "success",
+      agentName: agent.name,
+      taskId: args.taskId as string,
+      createdAt: now,
+    });
+
+    // Audit log
+    await ctx.db.insert("auditLog", {
+      timestamp: now,
+      actorType: "agent",
+      actorId: agent._id,
+      actorName: agent.name,
+      action: "task.completed",
+      resourceType: "agencyTask",
+      resourceId: args.taskId,
+      details: JSON.stringify({ summary: args.summary, status: newStatus }),
+    });
+
+    return { ok: true, status: newStatus };
+  },
+});
+
+// Explicit audit log entry
+export const logAuditEntry = mutation({
+  args: {
+    actorType: v.union(v.literal("agent"), v.literal("human"), v.literal("system")),
+    actorId: v.string(),
+    actorName: v.string(),
+    action: v.string(),
+    resourceType: v.string(),
+    resourceId: v.string(),
+    details: v.optional(v.string()),
+    clientId: v.optional(v.id("clients")),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("auditLog", {
+      timestamp: Date.now(),
+      ...args,
+    });
+  },
+});
+
+// Assign task to a specific agent (Foreman dispatch)
+export const assignTask = mutation({
+  args: {
+    taskId: v.id("agencyTasks"),
+    assigneeSessionKey: v.string(),
+    dispatcherSessionKey: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const dispatcher = await ctx.db.query("agencyAgents")
+      .filter((q) => q.eq(q.field("sessionKey"), args.dispatcherSessionKey))
+      .first();
+    if (!dispatcher) return { error: "Dispatcher not found" };
+
+    const assignee = await ctx.db.query("agencyAgents")
+      .filter((q) => q.eq(q.field("sessionKey"), args.assigneeSessionKey))
+      .first();
+    if (!assignee) return { error: "Assignee not found for key: " + args.assigneeSessionKey };
+
+    const task = await ctx.db.get(args.taskId);
+    if (!task) return { error: "Task not found" };
+    if (task.status !== "inbox") {
+      return { error: `Cannot assign task in ${task.status} status (must be inbox)` };
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(args.taskId, {
+      status: "assigned",
+      assigneeId: assignee._id,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("activities", {
+      type: "task_created",
+      message: `[DISPATCH] ${dispatcher.name} assigned "${task.title}" to ${assignee.name}`,
+      severity: "info",
+      agentName: dispatcher.name,
+      taskId: args.taskId as string,
+      createdAt: now,
+    });
+
+    return { ok: true, assignedTo: assignee.name, taskTitle: task.title };
+  },
+});
+
+// ============================================
+// WAKE AGENT (On-demand board check request)
+// ============================================
+
+export const wakeAgent = mutation({
+  args: {
+    agentName: v.string(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const agentName = args.agentName;
+    const reason = args.reason || `Owner requested ${agentName} check the board`;
+
+    // Post a high-visibility activity the target agent will see
+    await ctx.db.insert("activities", {
+      type: "escalation",
+      message: `[WAKE] ${agentName}: ${reason}`,
+      severity: "warning",
+      agentName: "Chrix",
+      createdAt: now,
+    });
+
+    // Log as audit
+    await ctx.db.insert("auditLog", {
+      timestamp: now,
+      actorType: "human",
+      actorId: "chrix",
+      actorName: "Chrix",
+      action: `${agentName.toLowerCase()}.wake_requested`,
+      resourceType: "system",
+      resourceId: agentName.toLowerCase(),
+      details: JSON.stringify({ agentName, reason }),
+    });
+
+    return { ok: true, message: `Wake signal sent to ${agentName}. They'll check on their next heartbeat.` };
+  },
+});
+
+// Backward-compatible alias — dashboard button still calls this
+export const wakeForeman = mutation({
+  args: {
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const reason = args.reason || "Owner requested board check";
+
+    await ctx.db.insert("activities", {
+      type: "escalation",
+      message: `[WAKE] Foreman: ${reason}`,
+      severity: "warning",
+      agentName: "Chrix",
+      createdAt: now,
+    });
+
+    await ctx.db.insert("auditLog", {
+      timestamp: now,
+      actorType: "human",
+      actorId: "chrix",
+      actorName: "Chrix",
+      action: "foreman.wake_requested",
+      resourceType: "system",
+      resourceId: "foreman",
+      details: JSON.stringify({ reason }),
+    });
+
+    return { ok: true, message: "Wake signal sent. Foreman will check on his next heartbeat." };
+  },
+});
+
+// ============================================
+// ONE-TIME: Fix session keys to match SOUL format
+// ============================================
+
+export const fixAgentSessionKeys = mutation({
+  handler: async (ctx) => {
+    const keyMap: Record<string, string> = {
+      "main": "agent:main:main",
+      "agent:foreman": "agent:foreman:main",
+      "agent:pm": "agent:pm:main",
+      "agent:growth": "agent:growth:main",
+      "agent:creative": "agent:creative:main",
+      "agent:builder": "agent:builder:main",
+      "agent:research": "agent:research:main",
+    };
+
+    const agents = await ctx.db.query("agencyAgents").collect();
+    const results: string[] = [];
+
+    for (const agent of agents) {
+      const newKey = keyMap[agent.sessionKey];
+      if (newKey && newKey !== agent.sessionKey) {
+        await ctx.db.patch(agent._id, { sessionKey: newKey });
+        results.push(`${agent.name}: ${agent.sessionKey} → ${newKey}`);
+      } else if (!newKey) {
+        results.push(`${agent.name}: already correct (${agent.sessionKey})`);
+      }
+    }
+
+    return { fixed: results };
+  },
+});
+
+// ============================================
+// AGENCY SETTINGS
+// ============================================
+
+export const updateAgency = mutation({
+  args: {
+    name: v.string(),
+    ownerName: v.string(),
+    timezone: v.string(),
+    settings: v.object({
+      defaultHeartbeatInterval: v.number(),
+      capacityAlertThreshold: v.number(),
+      budgetAlertThreshold: v.number(),
+    }),
+  },
+  handler: async (ctx, args) => {
+    const agencies = await ctx.db.query("agency").collect();
+    if (agencies.length === 0) {
+      throw new Error("No agency record found");
+    }
+    const agency = agencies[0];
+    await ctx.db.patch(agency._id, {
+      name: args.name,
+      ownerName: args.ownerName,
+      timezone: args.timezone,
+      settings: args.settings,
+    });
+    await ctx.db.insert("auditLog", {
+      timestamp: Date.now(),
+      actorType: "human",
+      actorId: "chrix",
+      actorName: "Chrix",
+      action: "agency.settings_updated",
+      resourceType: "agency",
+      resourceId: agency._id,
+      details: JSON.stringify({ name: args.name, timezone: args.timezone }),
+    });
+    return { ok: true };
+  },
+});
+
+// ============================================
+// TASK COMMENTS (UI-friendly)
+// ============================================
+
+export const addTaskComment = mutation({
+  args: {
+    taskId: v.string(),
+    taskType: v.union(v.literal("client"), v.literal("agency")),
+    content: v.string(),
+    fromName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    await ctx.db.insert("taskMessages", {
+      taskId: args.taskId,
+      taskType: args.taskType,
+      fromAgentName: args.fromName || "Chrix",
+      messageType: "comment",
+      content: args.content,
+      createdAt: now,
+    });
+    return { ok: true };
   },
 });
