@@ -105,6 +105,16 @@ export default defineSchema({
         v.literal("annual")
       ),
     }),
+    onetimeRevenue: v.optional(v.array(v.object({
+      description: v.string(),
+      amount: v.number(),
+      date: v.number(),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("paid"),
+        v.literal("cancelled")
+      ),
+    }))),
     health: v.object({
       score: v.number(),
       indicators: v.array(v.object({

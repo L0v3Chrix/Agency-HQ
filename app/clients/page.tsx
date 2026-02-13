@@ -41,7 +41,7 @@ export default function ClientsPage() {
             <tr>
               <th className="text-left px-6 py-4 text-sm font-medium text-gray-400">Client</th>
               <th className="text-left px-6 py-4 text-sm font-medium text-gray-400">Status</th>
-              <th className="text-left px-6 py-4 text-sm font-medium text-gray-400">MRR</th>
+              <th className="text-left px-6 py-4 text-sm font-medium text-gray-400">Revenue</th>
               <th className="text-left px-6 py-4 text-sm font-medium text-gray-400">Health</th>
               <th className="text-left px-6 py-4 text-sm font-medium text-gray-400">Contact</th>
             </tr>
@@ -62,9 +62,27 @@ export default function ClientsPage() {
                     {client.status}
                   </span>
                 </td>
-                <td className="px-6 py-4 text-gray-300">
-                  ${client.revenue.mrr.toLocaleString()}
-                  <span className="text-gray-500 text-sm">/{client.revenue.billingCycle}</span>
+                <td className="px-6 py-4">
+                  <div className="text-gray-300">
+                    ${client.revenue.mrr.toLocaleString()}
+                    <span className="text-gray-500 text-sm">/{client.revenue.billingCycle}</span>
+                  </div>
+                  {(client as any).onetimeRevenue && (client as any).onetimeRevenue.length > 0 && (() => {
+                    const paid = (client as any).onetimeRevenue
+                      .filter((e: any) => e.status === "paid")
+                      .reduce((s: number, e: any) => s + e.amount, 0);
+                    const pending = (client as any).onetimeRevenue
+                      .filter((e: any) => e.status === "pending")
+                      .reduce((s: number, e: any) => s + e.amount, 0);
+                    if (paid === 0 && pending === 0) return null;
+                    return (
+                      <div className="text-xs mt-0.5">
+                        {paid > 0 && <span className="text-blue-400">${paid.toLocaleString()} one-time</span>}
+                        {paid > 0 && pending > 0 && <span className="text-gray-600"> · </span>}
+                        {pending > 0 && <span className="text-amber-400/70">${pending.toLocaleString()} pending</span>}
+                      </div>
+                    );
+                  })()}
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center space-x-2">

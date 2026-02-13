@@ -157,10 +157,19 @@ export const getDashboardStats = query({
       ? Math.min(Math.round((totalActiveTasks / maxCapacity) * 100), 100)
       : 0;
     
+    // One-time revenue (paid entries across all clients)
+    const totalOnetimeRevenue = clients.reduce((sum, c) => {
+      const entries = (c as any).onetimeRevenue || [];
+      return sum + entries
+        .filter((e: any) => e.status === "paid")
+        .reduce((s: number, e: any) => s + e.amount, 0);
+    }, 0);
+
     return {
       totalClients: clients.length,
       activeClients: activeClients.length,
       totalMrr,
+      totalOnetimeRevenue,
       activeAgents,
       totalAgents: agents.length,
       activeTasks: totalActiveTasks,
@@ -255,10 +264,20 @@ export const createAgencyAgent = mutation({
     role: v.string(),
     sessionKey: v.string(),
     soulPath: v.string(),
+    level: v.optional(v.union(
+      v.literal("L1"),
+      v.literal("L2"),
+      v.literal("L3"),
+      v.literal("L4")
+    )),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("agencyAgents", {
-      ...args,
+      name: args.name,
+      role: args.role,
+      sessionKey: args.sessionKey,
+      soulPath: args.soulPath,
+      level: args.level,
       status: "idle",
       metrics: {
         tasksCompleted: 0,
@@ -378,7 +397,9 @@ export const createClientAgent = mutation({
     return await ctx.db.insert("clientAgents", {
       clientId: args.clientId,
       name: args.name,
+      role: args.role,
       sessionKey: args.sessionKey,
+      level: args.level,
       status: "idle",
       soulPath: args.soulPath,
       metrics: {
@@ -1262,6 +1283,157 @@ export const addTaskComment = mutation({
       content: args.content,
       createdAt: now,
     });
+    return { ok: true };
+  },
+});
+
+// ============================================
+// CLIENT MANAGEMENT
+// ============================================
+
+export const updateClient = mutation({
+  args: {
+    clientId: v.id("clients"),
+    name: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    status: v.optional(v.union(
+      v.literal("lead"),
+      v.literal("onboarding"),
+      v.literal("active"),
+      v.literal("at_risk"),
+      v.literal("offboarding"),
+      v.literal("alumni")
+    )),
+    revenue: v.optional(v.object({
+      mrr: v.number(),
+      currency: v.string(),
+      billingCycle: v.union(
+        v.literal("weekly"),
+        v.literal("monthly"),
+        v.literal("quarterly"),
+        v.literal("annual")
+      ),
+    })),
+    contacts: v.optional(v.array(v.object({
+      name: v.string(),
+      role: v.string(),
+      email: v.optional(v.string()),
+      phone: v.optional(v.string()),
+      primary: v.boolean(),
+    }))),
+    onetimeRevenue: v.optional(v.array(v.object({
+      description: v.string(),
+      amount: v.number(),
+      date: v.number(),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("paid"),
+        v.literal("cancelled")
+      ),
+    }))),
+  },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.clientId);
+    if (!client) throw new Error("Client not found");
+
+    const now = Date.now();
+    const patch: Record<string, unknown> = { updatedAt: now };
+
+    if (args.name !== undefined) patch.name = args.name;
+    if (args.industry !== undefined) patch.industry = args.industry;
+    if (args.revenue !== undefined) patch.revenue = args.revenue;
+    if (args.contacts !== undefined) patch.contacts = args.contacts;
+    if (args.onetimeRevenue !== undefined) patch.onetimeRevenue = args.onetimeRevenue;
+
+    // Handle status change with lifecycle tracking
+    if (args.status !== undefined && args.status !== client.status) {
+      patch.status = args.status;
+      const history = [...client.lifecycleStage.history];
+      if (history.length > 0) {
+        history[history.length - 1] = { ...history[history.length - 1], to: now };
+      }
+      history.push({ stage: args.status, from: now });
+      patch.lifecycleStage = {
+        current: args.status,
+        since: now,
+        history,
+      };
+
+      await ctx.db.insert("activities", {
+        type: "client_status_changed" as const,
+        message: `Client "${client.name}" status changed from ${client.status} to ${args.status}`,
+        severity: "info" as const,
+        clientId: args.clientId,
+        clientName: client.name,
+        createdAt: now,
+      });
+    }
+
+    await ctx.db.patch(args.clientId, patch);
+
+    await ctx.db.insert("auditLog", {
+      timestamp: now,
+      actorType: "human" as const,
+      actorId: "chrix",
+      actorName: "Chrix",
+      action: "client.updated",
+      resourceType: "client",
+      resourceId: args.clientId,
+      clientId: args.clientId,
+      details: JSON.stringify({
+        fields: Object.keys(patch).filter(k => k !== "updatedAt"),
+      }),
+    });
+
+    return { ok: true };
+  },
+});
+
+export const addOnetimeRevenue = mutation({
+  args: {
+    clientId: v.id("clients"),
+    description: v.string(),
+    amount: v.number(),
+    date: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("paid"),
+      v.literal("cancelled")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const client = await ctx.db.get(args.clientId);
+    if (!client) throw new Error("Client not found");
+
+    const existing = (client as any).onetimeRevenue || [];
+    const updated = [...existing, {
+      description: args.description,
+      amount: args.amount,
+      date: args.date,
+      status: args.status,
+    }];
+
+    const now = Date.now();
+    await ctx.db.patch(args.clientId, {
+      onetimeRevenue: updated,
+      updatedAt: now,
+    } as any);
+
+    await ctx.db.insert("auditLog", {
+      timestamp: now,
+      actorType: "human" as const,
+      actorId: "chrix",
+      actorName: "Chrix",
+      action: "client.onetime_revenue_added",
+      resourceType: "client",
+      resourceId: args.clientId,
+      clientId: args.clientId,
+      details: JSON.stringify({
+        description: args.description,
+        amount: args.amount,
+      }),
+    });
+
     return { ok: true };
   },
 });

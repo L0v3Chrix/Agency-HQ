@@ -365,6 +365,7 @@ export default function ClientDetailPage() {
 
   const [showAddTask, setShowAddTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [showCreateAgent, setShowCreateAgent] = useState(false);
 
   if (!client) {
     return (
@@ -404,13 +405,33 @@ export default function ClientDetailPage() {
             <h1 className="text-3xl font-bold">{client.name}</h1>
             <p className="text-gray-400">{client.industry}</p>
           </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-green-400">
-              ${client.revenue.mrr.toLocaleString()}/mo
+          <div className="flex items-start gap-4">
+            <div className="text-right">
+              <div className="text-2xl font-bold text-green-400">
+                ${client.revenue.mrr.toLocaleString()}/mo
+              </div>
+              <div className="text-sm text-gray-400">
+                {client.revenue.billingCycle} billing
+              </div>
+              {(client as any).onetimeRevenue?.filter((e: any) => e.status === "paid").length > 0 && (
+                <div className="text-sm text-blue-400 mt-1">
+                  + ${(client as any).onetimeRevenue
+                    .filter((e: any) => e.status === "paid")
+                    .reduce((s: number, e: any) => s + e.amount, 0)
+                    .toLocaleString()} one-time
+                </div>
+              )}
             </div>
-            <div className="text-sm text-gray-400">
-              {client.revenue.billingCycle} billing
-            </div>
+            <Link
+              href={`/clients/${slug}/settings`}
+              className="text-gray-400 hover:text-amber-400 transition-colors p-2 rounded-lg hover:bg-gray-800"
+              title="Client Settings"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </Link>
           </div>
         </div>
 
@@ -480,7 +501,15 @@ export default function ClientDetailPage() {
 
             {/* Client Team */}
             <div className="bg-gray-900 rounded-lg border border-gray-800 p-6">
-              <h3 className="text-lg font-medium mb-4">Client Team</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium">Client Team</h3>
+                <button
+                  onClick={() => setShowCreateAgent(true)}
+                  className="text-amber-400 hover:text-amber-300 text-sm font-medium"
+                >
+                  + Add Agent
+                </button>
+              </div>
               {agents && agents.length > 0 ? (
                 <div className="space-y-3">
                   {agents.map((agent: any) => (
@@ -625,6 +654,180 @@ export default function ClientDetailPage() {
           onClose={() => setSelectedTask(null)}
         />
       )}
+      {showCreateAgent && client && (
+        <AddClientAgentModal
+          clientId={client._id}
+          clientSlug={slug as string}
+          onClose={() => setShowCreateAgent(false)}
+        />
+      )}
     </>
+  );
+}
+
+// ============================================
+// ADD CLIENT AGENT MODAL
+// ============================================
+
+function AddClientAgentModal({
+  clientId,
+  clientSlug,
+  onClose,
+}: {
+  clientId: Id<"clients">;
+  clientSlug: string;
+  onClose: () => void;
+}) {
+  const createAgent = useMutation(api.functions.createClientAgent);
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [level, setLevel] = useState("");
+  const [sessionKey, setSessionKey] = useState("");
+  const [soulPath, setSoulPath] = useState("");
+  const [autoKey, setAutoKey] = useState(true);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const generateKey = (agentName: string) => {
+    const nameSlug = agentName.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+    return nameSlug ? `agent:${clientSlug}:${nameSlug}:main` : "";
+  };
+
+  const generateSoulPath = (agentName: string) => {
+    const nameSlug = agentName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").trim();
+    return nameSlug ? `~/clawd/clients/${clientSlug}/agents/${nameSlug}/SOUL.md` : "";
+  };
+
+  const handleNameChange = (val: string) => {
+    setName(val);
+    if (autoKey) {
+      setSessionKey(generateKey(val));
+      setSoulPath(generateSoulPath(val));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !role.trim() || !sessionKey.trim() || !soulPath.trim()) {
+      setError("Name, role, session key, and soul path are required.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      await createAgent({
+        clientId,
+        name: name.trim(),
+        role: role.trim(),
+        sessionKey: sessionKey.trim(),
+        soulPath: soulPath.trim(),
+        level: level ? level as "L1" | "L2" | "L3" | "L4" : undefined,
+      });
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Failed to create agent");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-900 rounded-xl w-full max-w-md border border-gray-700">
+        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white">Add Client Agent</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">×</button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg px-3 py-2 text-sm">
+              {error}
+            </div>
+          )}
+          <div>
+            <label className="block text-gray-400 text-sm mb-1">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="e.g. Content Specialist"
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-amber-500 focus:outline-none"
+              autoFocus
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-sm mb-1">Role</label>
+            <input
+              type="text"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              placeholder="e.g. Social Media Manager"
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-amber-500 focus:outline-none"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-sm mb-1">Level</label>
+            <select
+              value={level}
+              onChange={(e) => setLevel(e.target.value)}
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-amber-500 focus:outline-none"
+            >
+              <option value="">Not set</option>
+              <option value="L1">L1 — Observer</option>
+              <option value="L2">L2 — Advisor</option>
+              <option value="L3">L3 — Operator</option>
+              <option value="L4">L4 — Autonomous</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-gray-400 text-sm mb-1">
+              Session Key
+              <button
+                type="button"
+                onClick={() => setAutoKey(!autoKey)}
+                className="ml-2 text-amber-400 text-xs hover:text-amber-300"
+              >
+                ({autoKey ? "edit manually" : "auto-generate"})
+              </button>
+            </label>
+            <input
+              type="text"
+              value={sessionKey}
+              onChange={(e) => setSessionKey(e.target.value)}
+              disabled={autoKey}
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-amber-500 focus:outline-none font-mono text-sm disabled:opacity-60"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-sm mb-1">Soul Path</label>
+            <input
+              type="text"
+              value={soulPath}
+              onChange={(e) => setSoulPath(e.target.value)}
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-amber-500 focus:outline-none font-mono text-sm"
+              required
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-500 transition-colors font-medium disabled:opacity-60"
+            >
+              {saving ? "Creating..." : "Create Agent"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }

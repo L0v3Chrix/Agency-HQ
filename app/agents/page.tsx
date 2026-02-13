@@ -1,13 +1,177 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import Link from "next/link";
+import { useState } from "react";
 import PageHeader from "@/app/components/PageHeader";
+
+// ============================================
+// ADD AGENCY AGENT MODAL
+// ============================================
+
+function AddAgencyAgentModal({ onClose }: { onClose: () => void }) {
+  const createAgent = useMutation(api.functions.createAgencyAgent);
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [level, setLevel] = useState("");
+  const [sessionKey, setSessionKey] = useState("");
+  const [soulPath, setSoulPath] = useState("");
+  const [autoKey, setAutoKey] = useState(true);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const generateKey = (agentName: string) => {
+    const slug = agentName.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+    return slug ? `agent:${slug}:main` : "";
+  };
+
+  const generateSoulPath = (agentName: string) => {
+    const slug = agentName.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").trim();
+    return slug ? `~/clawd/agents/${slug}/SOUL.md` : "";
+  };
+
+  const handleNameChange = (val: string) => {
+    setName(val);
+    if (autoKey) {
+      setSessionKey(generateKey(val));
+      setSoulPath(generateSoulPath(val));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !role.trim() || !sessionKey.trim() || !soulPath.trim()) {
+      setError("Name, role, session key, and soul path are required.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      await createAgent({
+        name: name.trim(),
+        role: role.trim(),
+        sessionKey: sessionKey.trim(),
+        soulPath: soulPath.trim(),
+        level: level ? level as "L1" | "L2" | "L3" | "L4" : undefined,
+      });
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Failed to create agent");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-900 rounded-xl w-full max-w-md border border-gray-700">
+        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-white">Create Agency Agent</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">×</button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg px-3 py-2 text-sm">
+              {error}
+            </div>
+          )}
+          <div>
+            <label className="block text-gray-400 text-sm mb-1">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              placeholder="e.g. Strategist"
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-amber-500 focus:outline-none"
+              autoFocus
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-sm mb-1">Role</label>
+            <input
+              type="text"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              placeholder="e.g. Marketing Strategy Lead"
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-amber-500 focus:outline-none"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-sm mb-1">Level</label>
+            <select
+              value={level}
+              onChange={(e) => setLevel(e.target.value)}
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-amber-500 focus:outline-none"
+            >
+              <option value="">Not set</option>
+              <option value="L1">L1 — Observer</option>
+              <option value="L2">L2 — Advisor</option>
+              <option value="L3">L3 — Operator</option>
+              <option value="L4">L4 — Autonomous</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-gray-400 text-sm mb-1">
+              Session Key
+              <button
+                type="button"
+                onClick={() => setAutoKey(!autoKey)}
+                className="ml-2 text-amber-400 text-xs hover:text-amber-300"
+              >
+                ({autoKey ? "edit manually" : "auto-generate"})
+              </button>
+            </label>
+            <input
+              type="text"
+              value={sessionKey}
+              onChange={(e) => setSessionKey(e.target.value)}
+              disabled={autoKey}
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-amber-500 focus:outline-none font-mono text-sm disabled:opacity-60"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-gray-400 text-sm mb-1">Soul Path</label>
+            <input
+              type="text"
+              value={soulPath}
+              onChange={(e) => setSoulPath(e.target.value)}
+              className="w-full bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-amber-500 focus:outline-none font-mono text-sm"
+              required
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-500 transition-colors font-medium disabled:opacity-60"
+            >
+              {saving ? "Creating..." : "Create Agent"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// MAIN AGENTS PAGE
+// ============================================
 
 export default function AgentsPage() {
   const agencyAgents = useQuery(api.functions.getAgencyAgents) || [];
   const clients = useQuery(api.functions.getClients, {}) || [];
+  const [showCreateAgent, setShowCreateAgent] = useState(false);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -70,19 +234,27 @@ export default function AgentsPage() {
           <h2 className="text-2xl font-bold mb-2">Agents</h2>
           <p className="text-gray-400">Your AI agent team — agency and client agents</p>
         </div>
-        <div className="flex items-center gap-4 text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-gray-400">Active</span>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-gray-400">Active</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-gray-400" />
+              <span className="text-gray-400">Idle</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="text-gray-400">Blocked</span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-gray-400" />
-            <span className="text-gray-400">Idle</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-red-500" />
-            <span className="text-gray-400">Blocked</span>
-          </div>
+          <button
+            onClick={() => setShowCreateAgent(true)}
+            className="bg-amber-600 hover:bg-amber-500 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            + Create Agent
+          </button>
         </div>
       </div>
 
@@ -121,8 +293,8 @@ export default function AgentsPage() {
         <h3 className="text-lg font-semibold mb-4">Agency Agents</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {agencyAgents.map((agent) => (
-            <div 
-              key={agent._id} 
+            <div
+              key={agent._id}
               className="bg-gray-900 rounded-lg p-5 border border-gray-800 hover:border-amber-500/30 transition-colors"
             >
               {/* Header */}
@@ -140,7 +312,7 @@ export default function AgentsPage() {
                   </span>
                 )}
               </div>
-              
+
               {/* Details */}
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -172,7 +344,7 @@ export default function AgentsPage() {
                   </>
                 )}
               </div>
-              
+
               {/* Skills */}
               {agent.skills && agent.skills.length > 0 && (
                 <div className="mt-4 pt-3 border-t border-gray-800">
@@ -237,6 +409,11 @@ export default function AgentsPage() {
         </div>
       </section>
     </div>
+
+    {/* Create Agent Modal */}
+    {showCreateAgent && (
+      <AddAgencyAgentModal onClose={() => setShowCreateAgent(false)} />
+    )}
     </>
   );
 }
@@ -244,7 +421,7 @@ export default function AgentsPage() {
 // Client Agent Section Component
 function ClientAgentSection({ client }: { client: any }) {
   const agents = useQuery(api.functions.getClientAgents, { clientId: client._id }) || [];
-  
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "active": return "bg-green-500 animate-pulse";
@@ -263,7 +440,7 @@ function ClientAgentSection({ client }: { client: any }) {
     };
     return level ? colors[level] || colors.L1 : colors.L1;
   };
-  
+
   return (
     <div className="bg-gray-900/50 rounded-lg border border-gray-800 overflow-hidden">
       <div className="px-4 py-3 bg-gray-800/50 flex items-center justify-between">

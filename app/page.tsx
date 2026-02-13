@@ -702,10 +702,10 @@ export default function Dashboard() {
       <div className="max-w-[1600px] mx-auto px-6 py-6">
         {/* Stats Row */}
         <section className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <StatCard 
-            title="Monthly Revenue" 
+          <StatCard
+            title="Monthly Revenue"
             value={`$${stats.totalMrr.toLocaleString()}`}
-            subtitle="recurring"
+            subtitle={`recurring${stats.totalOnetimeRevenue ? ` + $${stats.totalOnetimeRevenue.toLocaleString()} one-time` : ''}`}
             color="green"
           />
           <StatCard 
